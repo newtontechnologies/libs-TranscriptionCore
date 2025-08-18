@@ -16,13 +16,17 @@ namespace TranscriptionCore.Serialization
         {
             transcription.ReindexSpeakers();
 
-            var xmlAttributes = transcription.Elements.Select(e => new XAttribute(e.Key, e.Value)).Union(new[]
-            {
+            var xmlAttributes = transcription.Elements.Select(e => new XAttribute(e.Key, e.Value)).ToList();
+
+            xmlAttributes.AddRange(
+            [
                 new XAttribute("version", VersionNumber),
                 new XAttribute("mediauri", transcription.MediaURI ?? ""),
                 new XAttribute("created", transcription.Created),
-                new XAttribute("language", transcription.Language)
-            });
+            ]);
+
+            if (transcription.Language is { })
+                xmlAttributes.Add(new XAttribute("language", transcription.Language));
 
             var pars = new XElement("transcription", xmlAttributes,
                 transcription.Meta,
