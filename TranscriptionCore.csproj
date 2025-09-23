@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <PackageId>beey.trsx</PackageId>
+    <Version>$(TRANSCRIPTION_CORE_NUGET_VERSION)</Version>
+    <Authors>Newton Technologies</Authors>
+    <Company>Newton Technologies</Company>
+    <RepositoryUrl>https://github.com/newtontechnologies/libs-TranscriptionCore</RepositoryUrl>
+    <OutputType>library</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>TranscriptionCore</AssemblyName>
     <RootNamespace>TranscriptionCore</RootNamespace>

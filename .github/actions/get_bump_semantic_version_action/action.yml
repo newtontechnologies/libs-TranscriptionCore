@@ -1,0 +1,60 @@
+name: Get and bump semantic version
+description: Gets and optionally bumps the latest semantic version from Github tags
+
+inputs:
+  semantic_version_tag_regex:
+    description: >
+      The regex that matches the latest semantic version tag.
+      The first match group should match the semantic version
+    required: true
+  version_bump:
+    description: The type of semantic version bump to apply
+    required: true
+
+outputs:
+  semantic_version:
+    description: The bumped semantic version
+    value: ${{ steps.bump_semantic_version.outputs.semantic_version }}
+
+# NOTE: requires the repository to be checked-out with fetch-depth 0
+# NOTE: only annotated tags contain taggerdate (the tag creation date)
+
+runs:
+  using: composite
+  steps:
+  - name: Get latest semantic version
+    id: get_semantic_version
+    shell: sh
+    run: |
+      result=$(git for-each-ref --sort=-taggerdate --format='%(refname:short)' refs/tags | sed -nr 's/${{ inputs.semantic_version_tag_regex }}/\1/p' | head -n1)
+      result=$( [ "$result" = "" ] && echo "3.9.0" || echo "$result" )
+      echo "semantic_version=$result" >> "$GITHUB_OUTPUT"
+
+  - name: Parse revisions
+    id: parse_revisions
+    shell: sh
+    env:
+      SEMANTIC_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
+    run: |
+      major=$(echo ${{ env.SEMANTIC_VERSION }} | cut -d. -f1)
+      minor=$(echo ${{ env.SEMANTIC_VERSION }} | cut -d. -f2)
+      patch=$(echo ${{ env.SEMANTIC_VERSION }} | cut -d. -f3)
+      echo "major=$major" >> "$GITHUB_OUTPUT"
+      echo "minor=$minor" >> "$GITHUB_OUTPUT"
+      echo "patch=$patch" >> "$GITHUB_OUTPUT"
+
+  - name: Bump semantic version
+    id: bump_semantic_version
+    shell: sh
+    env:
+      MAJOR: $(( ${{ steps.parse_revisions.outputs.major }} + ${{ (inputs.version_bump == 'major') && 1 || 0 }} ))
+      MINOR: $(( ${{ steps.parse_revisions.outputs.minor }} + ${{ (inputs.version_bump == 'minor') && 1 || 0 }} ))
+      PATCH: $(( ${{ steps.parse_revisions.outputs.patch }} + ${{ (inputs.version_bump == 'patch') && 1 || 0 }} ))
+    run: |
+      if ${{ (inputs.version_bump == 'major') }}; then
+        echo "semantic_version=${{ env.MAJOR }}.0.0" >> "$GITHUB_OUTPUT"
+      elif ${{ (inputs.version_bump == 'minor') }}; then
+        echo "semantic_version=${{ env.MAJOR }}.${{ env.MINOR }}.0" >> "$GITHUB_OUTPUT"
+      else
+        echo "semantic_version=${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}" >> "$GITHUB_OUTPUT"
+      fi

@@ -24,3 +24,48 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Get and bump latest semantic version
+      id: get_semantic_version
+      uses: ./.github/actions/get_bump_semantic_version_action
+      with:
+        semantic_version_tag_regex: ^v(.*)$
+        version_bump: ${{ inputs.version_bump }}
+
+    - name: Pack TranscriptionCore into a nuget package
+      id: pack_transcription_core
+      env:
+        TRANSCRIPTION_CORE_NUGET_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
+      run: |
+        dotnet pack
+        path=bin/Release/beey.trsx.${{ env.TRANSCRIPTION_CORE_NUGET_VERSION }}.nupkg
+        echo "nuget_package_path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Publish nuget package
+      env:
+        NUGET_PACKAGE_PATH: ${{ steps.pack_transcription_core.outputs.nuget_package_path }}
+      run: dotnet nuget push ${{ env.NUGET_PACKAGE_PATH }} --api-key ${{ secrets.NUGET_ORG_API_KEY }} --source 'https://api.nuget.org/v3/index.json'
+
+    - name: Create annotated tag
+      uses: mathieudutour/github-tag-action@v6.2
+      env:
+        NUGET_PACKAGE_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
+      with:
+        create_annotated_tag: true
+        custom_tag: ${{ env.NUGET_PACKAGE_VERSION }}
+        tag_prefix: v
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create release
+      id: create_release
+      uses: ncipollo/release-action@v1
+      env:
+        NUGET_PACKAGE_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
+        NUGET_PACKAGE_PATH: ${{ steps.pack_transcription_core.outputs.nuget_package_path }}
+      with:
+        commit: ${{ github.sha }}
+        tag: v${{ env.NUGET_PACKAGE_VERSION }}
+        name: Release v${{ env.NUGET_PACKAGE_VERSION }}
+        artifactErrorsFailBuild: true
+        artifacts: ${{ env.NUGET_PACKAGE_PATH }}
+        token: ${{ secrets.GITHUB_TOKEN }}
