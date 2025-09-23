@@ -27,7 +27,7 @@ runs:
     shell: sh
     run: |
       result=$(git for-each-ref --sort=-taggerdate --format='%(refname:short)' refs/tags | sed -nr 's/${{ inputs.semantic_version_tag_regex }}/\1/p' | head -n1)
-      result=$( [ "$result" = "" ] && echo "3.10.0" || echo "$result" )
+      result=$( [ "$result" = "" ] && echo "3.9.0" || echo "$result" )
       echo "semantic_version=$result" >> "$GITHUB_OUTPUT"
 
   - name: Parse revisions
