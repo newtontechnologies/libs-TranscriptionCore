@@ -18,7 +18,7 @@ jobs:
   publish_transcription_core:
     name: Publish TranscriptionCore
     runs-on: ubuntu-latest
-    # if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master'
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
