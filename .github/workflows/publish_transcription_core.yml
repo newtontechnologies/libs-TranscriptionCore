@@ -18,7 +18,7 @@ jobs:
   publish_transcription_core:
     name: Publish TranscriptionCore
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    # if: github.ref == 'refs/heads/master'
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
     - name: Publish nuget package
       env:
         NUGET_PACKAGE_PATH: ${{ steps.pack_transcription_core.outputs.nuget_package_path }}
-      run: dotnet nuget push ${{ env.NUGET_PACKAGE_PATH }} --api-key ${{ secrets.NUGET_ORG_API_KEY }} --source 'https://api.nuget.org/v3/index.json'
+      run: echo "pushing" # dotnet nuget push ${{ env.NUGET_PACKAGE_PATH }} --api-key ${{ secrets.NUGET_ORG_API_KEY }} --source 'https://api.nuget.org/v3/index.json'
 
     - name: Create annotated tag
       uses: mathieudutour/github-tag-action@v6.2
