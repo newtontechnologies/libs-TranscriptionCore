@@ -1,0 +1,26 @@
+name: Publish TranscriptionCore
+run-name: Publish ${{ inputs.version_bump }} ${{ inputs.release_type }} TranscriptionCore
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        type: choice
+        description: The type of bump to apply to the nuget package version
+        required: true
+        default: patch
+        options:
+        - major
+        - minor
+        - patch
+
+jobs:
+  publish_transcription_core:
+    name: Publish TranscriptionCore
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
