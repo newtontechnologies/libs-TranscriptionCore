@@ -1,0 +1,90 @@
+name: Bump version
+description: Bumps a semantic version in major.minor.patch-build format
+
+inputs:
+  version:
+    description: Version in the format major.minor.patch-build
+    required: true
+  bump_level:
+    description: Which part to bump (major, minor, patch, build)
+    required: false
+    default: patch
+
+outputs:
+  next_version:
+    description: The bumped version in major.minor.patch-build format
+    value: ${{ steps.bump.outputs.next_version }}
+  next_version_without_build:
+    description: The bumped version without the fourth level
+    value: ${{ steps.bump.outputs.next_version_without_build }}
+  major:
+    description: The major revision of the bumped version
+    value: ${{ steps.bump.outputs.major }}
+  minor:
+    description: The minor revision of the bumped version
+    value: ${{ steps.bump.outputs.minor }}
+  patch:
+    description: The patch revision of the bumped version
+    value: ${{ steps.bump.outputs.patch }}
+  build:
+    description: The build revision of the bumped version
+    value: ${{ steps.bump.outputs.build }}
+
+runs:
+  using: composite
+  steps:
+    - name: Bump version
+      id: bump
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        BUMP_LEVEL: ${{ inputs.bump_level }}
+      run: |
+        set -euo pipefail
+
+        if ! [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-([0-9]+)$ ]]; then
+          echo "Invalid version '$VERSION'. Expected format: major.minor.patch-build" >&2
+          exit 1
+        fi
+
+        major="${BASH_REMATCH[1]}"
+        minor="${BASH_REMATCH[2]}"
+        patch="${BASH_REMATCH[3]}"
+        build="${BASH_REMATCH[4]}"
+
+        case "$BUMP_LEVEL" in
+          major)
+            major=$((major + 1))
+            minor=0
+            patch=0
+            build=0
+            ;;
+          minor)
+            minor=$((minor + 1))
+            patch=0
+            build=0
+            ;;
+          patch)
+            patch=$((patch + 1))
+            build=0
+            ;;
+          build)
+            build=$((build + 1))
+            ;;
+          *)
+            echo "Invalid bump_level '$BUMP_LEVEL'. Allowed values: major, minor, patch, build" >&2
+            exit 1
+            ;;
+        esac
+
+        next_version="${major}.${minor}.${patch}-${build}"
+        next_version_without_build="${major}.${minor}.${patch}"
+
+        {
+          echo "next_version=$next_version"
+          echo "next_version_without_build=$next_version_without_build"
+          echo "major=$major"
+          echo "minor=$minor"
+          echo "patch=$patch"
+          echo "build=$build"
+        } >> "$GITHUB_OUTPUT"

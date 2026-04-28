@@ -1,0 +1,175 @@
+name: Create release
+
+on:
+  workflow_call:
+    inputs:
+      version_tag_regex:
+        description: >
+          Regex to match version tags (first capture group = version).
+          Required unless version_override is set.
+        required: false
+        type: string
+        default: ""
+      bump_level:
+        description: Which part to bump (major, minor, patch, build)
+        required: false
+        type: string
+        default: patch
+      version_override:
+        description: >
+          Explicit version to release, skipping tag detection and bump.
+          Accepts major.minor.patch or major.minor.patch-build format.
+        required: false
+        type: string
+        default: ""
+      create_release:
+        description: Whether to create a git tag and GitHub release
+        required: false
+        type: boolean
+        default: true
+      tag_prefix:
+        description: Prefix for the version tag (e.g. "v" produces tag "v1.2.3-0")
+        required: false
+        type: string
+        default: "v"
+    outputs:
+      version:
+        description: The release version in major.minor.patch-build format
+        value: ${{ jobs.create_release.outputs.version }}
+      version_without_build:
+        description: The release version without build (major.minor.patch)
+        value: ${{ jobs.create_release.outputs.version_without_build }}
+      tag:
+        description: The git tag name (e.g. v1.2.3-0)
+        value: ${{ jobs.create_release.outputs.tag }}
+      release_url:
+        description: The URL of the created GitHub release (empty if create_release is false)
+        value: ${{ jobs.create_release.outputs.release_url }}
+      major:
+        description: The major revision
+        value: ${{ jobs.create_release.outputs.major }}
+      minor:
+        description: The minor revision
+        value: ${{ jobs.create_release.outputs.minor }}
+      patch:
+        description: The patch revision
+        value: ${{ jobs.create_release.outputs.patch }}
+      build:
+        description: The build revision
+        value: ${{ jobs.create_release.outputs.build }}
+    secrets:
+      release_token:
+        description: Token for checkout and creating the release (defaults to GITHUB_TOKEN)
+        required: false
+
+jobs:
+  create_release:
+    name: Create release
+    runs-on: [self-hosted, general-purpose]
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      version_without_build: ${{ steps.resolve.outputs.version_without_build }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      release_url: ${{ steps.release.outputs.release_url }}
+      major: ${{ steps.resolve.outputs.major }}
+      minor: ${{ steps.resolve.outputs.minor }}
+      patch: ${{ steps.resolve.outputs.patch }}
+      build: ${{ steps.resolve.outputs.build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.release_token || github.token }}
+
+      - name: Detect current version from tags
+        if: inputs.version_override == ''
+        id: detect
+        shell: bash
+        env:
+          VERSION_TAG_REGEX: ${{ inputs.version_tag_regex }}
+        run: |
+          if [ -z "$VERSION_TAG_REGEX" ]; then
+            echo "::error::version_tag_regex is required when version_override is not set"
+            exit 1
+          fi
+
+          result=$(git tag --merged HEAD --list | sed -nr "s/${VERSION_TAG_REGEX}/\1/p" | sort -V | tail -n1)
+          result=$( [ "$result" = "" ] && echo "0.0.0-0" || echo "$result" )
+          result=$( [[ ! "$result" == *-* ]] && echo "${result}-0" || echo "$result" )
+
+          echo "current_version=$result" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        if: inputs.version_override == ''
+        id: bump
+        uses: ./.github/actions/bump_version@main
+        with:
+          version: ${{ steps.detect.outputs.current_version }}
+          bump_level: ${{ inputs.bump_level }}
+
+      - name: Resolve version
+        id: resolve
+        shell: bash
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+          BUMPED_VERSION: ${{ steps.bump.outputs.next_version }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$VERSION_OVERRIDE" ]; then
+            version="$VERSION_OVERRIDE"
+            if [[ ! "$version" == *-* ]]; then
+              version="${version}-0"
+            fi
+          else
+            version="$BUMPED_VERSION"
+          fi
+
+          if ! [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-([0-9]+)$ ]]; then
+            echo "::error::Invalid version '$version'. Expected format: major.minor.patch-build"
+            exit 1
+          fi
+
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          build="${BASH_REMATCH[4]}"
+          version_without_build="${major}.${minor}.${patch}"
+          tag="${TAG_PREFIX}${version}"
+
+          {
+            echo "version=$version"
+            echo "version_without_build=$version_without_build"
+            echo "tag=$tag"
+            echo "major=$major"
+            echo "minor=$minor"
+            echo "patch=$patch"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: inputs.create_release
+        id: release
+        shell: bash
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          response=$(curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.release_token || github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/releases" \
+            -d "$(jq -n \
+              --arg tag "$TAG" \
+              --arg target "${{ github.sha }}" \
+              '{
+                tag_name: $tag,
+                target_commitish: $target,
+                name: $tag,
+                generate_release_notes: true
+              }')")
+
+          release_url=$(echo "$response" | jq -r '.html_url')
+          echo "release_url=$release_url" >> "$GITHUB_OUTPUT"

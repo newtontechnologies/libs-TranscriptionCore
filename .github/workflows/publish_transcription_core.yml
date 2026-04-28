@@ -1,5 +1,5 @@
 name: Publish TranscriptionCore
-run-name: Publish ${{ inputs.version_bump }} ${{ inputs.release_type }} TranscriptionCore
+run-name: Publish ${{ inputs.version_bump }} TranscriptionCore
 
 on:
   workflow_dispatch:
@@ -15,57 +15,50 @@ on:
         - patch
 
 jobs:
-  publish_transcription_core:
-    name: Publish TranscriptionCore
-    runs-on: ubuntu-latest
+  create_release:
     if: github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/create_release.yml
+    with:
+      version_tag_regex: ^v(.*)$
+      bump_level: ${{ inputs.version_bump }}
+
+  publish:
+    name: Publish TranscriptionCore
+    needs: create_release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Get and bump latest semantic version
-      id: get_semantic_version
-      uses: ./.github/actions/get_bump_semantic_version_action
-      with:
-        semantic_version_tag_regex: ^v(.*)$
-        version_bump: ${{ inputs.version_bump }}
 
     - name: Pack TranscriptionCore into a nuget package
-      id: pack_transcription_core
+      id: pack
       env:
-        TRANSCRIPTION_CORE_NUGET_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
+        TRANSCRIPTION_CORE_NUGET_VERSION: ${{ needs.create_release.outputs.version_without_build }}
       run: |
         dotnet pack
-        path=bin/Release/beey.trsx.${{ env.TRANSCRIPTION_CORE_NUGET_VERSION }}.nupkg
-        echo "nuget_package_path=$path" >> "$GITHUB_OUTPUT"
+        echo "nuget_package_path=bin/Release/beey.trsx.${{ env.TRANSCRIPTION_CORE_NUGET_VERSION }}.nupkg" >> "$GITHUB_OUTPUT"
 
     - name: Publish nuget package
-      env:
-        NUGET_PACKAGE_PATH: ${{ steps.pack_transcription_core.outputs.nuget_package_path }}
-      run: dotnet nuget push ${{ env.NUGET_PACKAGE_PATH }} --api-key ${{ secrets.NUGET_ORG_API_KEY }} --source 'https://api.nuget.org/v3/index.json'
+      run: dotnet nuget push ${{ steps.pack.outputs.nuget_package_path }} --api-key ${{ secrets.NUGET_ORG_API_KEY }} --source 'https://api.nuget.org/v3/index.json'
 
-    - name: Create annotated tag
-      uses: mathieudutour/github-tag-action@v6.2
+    - name: Upload nuget package to release artifacts
       env:
-        NUGET_PACKAGE_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
-      with:
-        create_annotated_tag: true
-        custom_tag: ${{ env.NUGET_PACKAGE_VERSION }}
-        tag_prefix: v
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ needs.create_release.outputs.tag }}
+        NUGET_PACKAGE_PATH: ${{ steps.pack.outputs.nuget_package_path }}
+      run: |
+        upload_url=$(curl -sf \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "${{ github.api_url }}/repos/${{ github.repository }}/releases/tags/${TAG}" \
+          | jq -r '.upload_url' | sed 's/{[^}]*}//')
 
-    - name: Create release
-      id: create_release
-      uses: ncipollo/release-action@v1
-      env:
-        NUGET_PACKAGE_VERSION: ${{ steps.get_semantic_version.outputs.semantic_version }}
-        NUGET_PACKAGE_PATH: ${{ steps.pack_transcription_core.outputs.nuget_package_path }}
-      with:
-        commit: ${{ github.sha }}
-        tag: v${{ env.NUGET_PACKAGE_VERSION }}
-        name: Release v${{ env.NUGET_PACKAGE_VERSION }}
-        artifactErrorsFailBuild: true
-        artifacts: ${{ env.NUGET_PACKAGE_PATH }}
-        token: ${{ secrets.GITHUB_TOKEN }}
+        curl -sf \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          -H "Content-Type: application/octet-stream" \
+          --data-binary @"${NUGET_PACKAGE_PATH}" \
+          "${upload_url}?name=$(basename "${NUGET_PACKAGE_PATH}")"
