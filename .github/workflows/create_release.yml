@@ -65,7 +65,7 @@ on:
 jobs:
   create_release:
     name: Create release
-    runs-on: [self-hosted, general-purpose]
+    runs-on: [self-hosted, cluster]
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       version_without_build: ${{ steps.resolve.outputs.version_without_build }}
